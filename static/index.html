@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>T-bot RAG</title>
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+  background: #212121;
+  color: #ececec;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ===== Header ===== */
+#header {
+  background: #171717;
+  border-bottom: 1px solid #333;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 56px;
+}
+#header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #10a37f;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
+}
+.header-spacer { flex: 1; }
+
+/* DB 상태 배지 */
+#db-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+#db-label {
+  color: #aaa;
+  white-space: nowrap;
+}
+#db-name {
+  font-weight: 600;
+  color: #10a37f;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#db-name.empty { color: #888; font-weight: 400; }
+
+#btn-delete {
+  background: #ef4444;
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 12px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#btn-delete:hover { background: #dc2626; }
+#btn-delete.hidden { display: none; }
+
+#btn-upload {
+  background: #10a37f;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 7px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#btn-upload:hover { background: #0d8f6f; }
+
+/* ===== Chat Area ===== */
+#chat-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.msg {
+  display: flex;
+  gap: 10px;
+  max-width: 900px;
+  width: 100%;
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+.msg.user { flex-direction: row-reverse; align-self: flex-end; }
+.msg.assistant { align-self: flex-start; }
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.msg.user .avatar     { background: #2563eb; }
+.msg.assistant .avatar { background: #10a37f; }
+
+.bubble {
+  background: #2a2a2a;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: calc(100% - 50px);
+}
+.msg.user .bubble { background: #1e3a5f; border-radius: 12px 3px 12px 12px; }
+.msg.assistant .bubble { border-radius: 3px 12px 12px 12px; }
+
+/* 로그 메시지 (작은 글씨) */
+.log-line {
+  font-size: 12px;
+  color: #888;
+  font-family: 'Courier New', monospace;
+  padding: 2px 0;
+}
+.log-line.success { color: #4ade80; }
+.log-line.error   { color: #f87171; }
+
+/* ===== 모래시계 스피너 ===== */
+#hourglass {
+  display: none;
+  align-self: flex-start;
+  background: #2a2a2a;
+  border-radius: 12px;
+  padding: 16px 20px;
+  font-size: 14px;
+  color: #aaa;
+  gap: 10px;
+  align-items: center;
+  animation: fadeIn 0.2s ease;
+}
+#hourglass.visible { display: flex; }
+.spinner {
+  font-size: 24px;
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* ===== 테이블 미리보기 ===== */
+.table-preview {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+  max-width: 100%;
+}
+.table-preview h4 {
+  font-size: 13px;
+  color: #10a37f;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrap::-webkit-scrollbar { height: 6px; }
+.table-wrap::-webkit-scrollbar-track { background: #2a2a2a; }
+.table-wrap::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+.preview-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  min-width: 100%;
+}
+.preview-table th {
+  background: #2a3a4a;
+  color: #7dd3fc;
+  padding: 6px 12px;
+  text-align: left;
+  border: 1px solid #3a4a5a;
+  font-weight: 600;
+  font-size: 12px;
+}
+.preview-table td {
+  padding: 5px 12px;
+  border: 1px solid #333;
+  color: #ddd;
+  font-size: 12px;
+}
+.preview-table tr:nth-child(even) td { background: #252525; }
+
+/* ===== SQL 블록 ===== */
+.sql-block {
+  background: #1a1a2e;
+  border: 1px solid #3a3a6a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #a78bfa;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 8px 0;
+}
+
+/* ===== 결과 요약 ===== */
+.result-summary {
+  font-size: 13px;
+  color: #aaa;
+  margin-bottom: 8px;
+}
+.result-summary strong { color: #10a37f; }
+
+/* ===== 입력 영역 ===== */
+#input-area {
+  background: #171717;
+  border-top: 1px solid #333;
+  padding: 16px 20px;
+  flex-shrink: 0;
+}
+.input-wrap {
+  display: flex;
+  gap: 10px;
+  max-width: 900px;
+  margin: 0 auto;
+  align-items: flex-end;
+}
+#query-input {
+  flex: 1;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  color: #ececec;
+  font-size: 14px;
+  padding: 10px 14px;
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
+  outline: none;
+  font-family: inherit;
+  line-height: 1.5;
+}
+#query-input:focus { border-color: #10a37f; }
+#query-input::placeholder { color: #666; }
+
+#btn-send {
+  background: #10a37f;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+#btn-send:hover { background: #0d8f6f; }
+#btn-send:disabled { background: #3a3a3a; cursor: not-allowed; }
+
+/* ===== 업로드 모달 ===== */
+#modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+#modal-overlay.visible { display: flex; }
+
+#modal {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 16px;
+  padding: 28px;
+  width: 520px;
+  max-width: 95vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+#modal h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: #ececec;
+}
+
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block;
+  font-size: 13px;
+  color: #aaa;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.form-group input[type="text"] {
+  width: 100%;
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  color: #ececec;
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+}
+.form-group input[type="text"]:focus { border-color: #10a37f; }
+.form-group input[type="text"]::placeholder { color: #555; }
+
+/* 파일 드롭존 */
+#drop-zone {
+  border: 2px dashed #444;
+  border-radius: 10px;
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative;
+}
+#drop-zone:hover, #drop-zone.drag-over {
+  border-color: #10a37f;
+  background: rgba(16,163,127,0.05);
+}
+#drop-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+#drop-zone .drop-icon { font-size: 36px; margin-bottom: 8px; }
+#drop-zone p { font-size: 14px; color: #888; }
+#drop-zone p strong { color: #10a37f; }
+#drop-zone .hint { font-size: 12px; color: #666; margin-top: 4px; }
+
+/* 선택된 파일 목록 */
+#file-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #2a2a2a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.file-item .file-name { flex: 1; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-item .file-size { color: #888; font-size: 11px; flex-shrink: 0; }
+.file-item .file-rm   { color: #888; cursor: pointer; font-size: 16px; flex-shrink: 0; line-height: 1; }
+.file-item .file-rm:hover { color: #ef4444; }
+
+/* 총 용량 표시 */
+#total-size {
+  font-size: 12px;
+  color: #888;
+  text-align: right;
+  margin-top: 6px;
+}
+#total-size.over { color: #ef4444; }
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+.btn-cancel {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  color: #aaa;
+  font-size: 14px;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+.btn-cancel:hover { background: #333; }
+.btn-ok {
+  background: #10a37f;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+.btn-ok:hover { background: #0d8f6f; }
+.btn-ok:disabled { background: #3a3a3a; cursor: not-allowed; }
+
+/* 확인 다이얼로그 */
+#confirm-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 2000;
+  align-items: center;
+  justify-content: center;
+}
+#confirm-overlay.visible { display: flex; }
+#confirm-box {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 24px;
+  width: 360px;
+  max-width: 90vw;
+}
+#confirm-box h3 { font-size: 16px; margin-bottom: 10px; }
+#confirm-box p  { font-size: 14px; color: #aaa; margin-bottom: 20px; }
+#confirm-box .actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* 토스트 알림 */
+#toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ef4444;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  z-index: 3000;
+  white-space: nowrap;
+}
+#toast.success { background: #10a37f; }
+#toast.show    { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ===== Header ===== -->
+<div id="header">
+  <h1>🤖 T-bot RAG</h1>
+  <div id="db-status">
+    <span id="db-label">DB:</span>
+    <span id="db-name" class="empty">No data</span>
+    <button id="btn-delete" class="hidden" onclick="confirmDelete()">🗑 삭제</button>
+  </div>
+  <div class="header-spacer"></div>
+  <button id="btn-upload" onclick="openUploadModal()">📁 파일 업로드</button>
+</div>
+
+<!-- ===== Chat Area ===== -->
+<div id="chat-area">
+  <div id="hourglass">
+    <span class="spinner">⏳</span>
+    <span id="hourglass-msg">벡터 DB 생성 중...</span>
+  </div>
+</div>
+
+<!-- ===== Input Area ===== -->
+<div id="input-area">
+  <div class="input-wrap">
+    <textarea id="query-input" placeholder="질문을 입력하세요... (Shift+Enter: 줄바꿈, Enter: 전송)" rows="1"></textarea>
+    <button id="btn-send" onclick="sendQuery()" title="전송">➤</button>
+  </div>
+</div>
+
+<!-- ===== Upload Modal ===== -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2>📁 CSV 파일 업로드</h2>
+
+    <div class="form-group">
+      <label>데이터베이스 이름 <span style="color:#666;font-size:11px">(영문, 숫자, _ 만 허용)</span></label>
+      <input type="text" id="input-db-name" placeholder="예: my_database" maxlength="64">
+    </div>
+
+    <div class="form-group">
+      <label>CSV 파일 선택 <span style="color:#666;font-size:11px">(여러 파일 선택 가능 / ZIP 자동 압축해제 / 총 1MB 이하)</span></label>
+      <div id="drop-zone">
+        <input type="file" id="file-input" multiple accept=".csv,.zip" onchange="onFileSelect(event)">
+        <div class="drop-icon">📂</div>
+        <p><strong>클릭</strong>하거나 파일을 <strong>드래그</strong>하여 업로드</p>
+        <p class="hint">.csv, .zip 파일 지원 | 총 1MB 이하</p>
+      </div>
+      <div id="file-list"></div>
+      <div id="total-size"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeUploadModal()">취소</button>
+      <button class="btn-ok" id="btn-do-upload" onclick="doUpload()" disabled>업로드 시작</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Confirm Dialog ===== -->
+<div id="confirm-overlay">
+  <div id="confirm-box">
+    <h3>⚠️ 데이터베이스 삭제</h3>
+    <p id="confirm-msg">현재 데이터베이스를 삭제하시겠습니까?<br>Milvus collection과 MySQL database가 모두 삭제됩니다.</p>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeConfirm()">취소</button>
+      <button class="btn-ok" style="background:#ef4444" onclick="doDelete()">삭제</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Toast ===== -->
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// 상태
+// ============================================================
+let selectedFiles   = [];   // {name, size, file} 배열
+let isProcessing    = false; // 처리 중 여부
+let isQuerying      = false; // 쿼리 중 여부
+
+// ============================================================
+// 쿠키 유틸
+// ============================================================
+function getCookie(name) {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+  return '';
+}
+
+// ============================================================
+// DB 상태 표시
+// ============================================================
+function updateDbStatus(dbName) {
+  const nameEl   = document.getElementById('db-name');
+  const deleteEl = document.getElementById('btn-delete');
+  if (dbName) {
+    nameEl.textContent = dbName;
+    nameEl.classList.remove('empty');
+    deleteEl.classList.remove('hidden');
+  } else {
+    nameEl.textContent = 'No data';
+    nameEl.classList.add('empty');
+    deleteEl.classList.add('hidden');
+  }
+}
+
+// ============================================================
+// 채팅 메시지 추가
+// ============================================================
+function addMessage(role, content, cls='') {
+  const area = document.getElementById('chat-area');
+  const msg  = document.createElement('div');
+  msg.className = `msg ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar';
+  avatar.textContent = role === 'user' ? '👤' : '🤖';
+
+  const bubble = document.createElement('div');
+  bubble.className = `bubble ${cls}`;
+  if (typeof content === 'string') {
+    bubble.innerHTML = content;
+  } else {
+    bubble.appendChild(content);
+  }
+
+  msg.appendChild(avatar);
+  msg.appendChild(bubble);
+  area.appendChild(msg);
+  scrollToBottom();
+  return bubble;
+}
+
+function addLogLine(bubble, text, type='') {
+  const line = document.createElement('div');
+  line.className = `log-line ${type}`;
+  line.textContent = text;
+  bubble.appendChild(line);
+  scrollToBottom();
+}
+
+function scrollToBottom() {
+  const area = document.getElementById('chat-area');
+  area.scrollTop = area.scrollHeight;
+}
+
+// ============================================================
+// 모래시계
+// ============================================================
+function showHourglass(msg) {
+  const hg  = document.getElementById('hourglass');
+  const txt = document.getElementById('hourglass-msg');
+  txt.textContent = msg || '처리 중...';
+  hg.classList.add('visible');
+  // chat-area 맨 아래로 이동
+  const area = document.getElementById('chat-area');
+  area.appendChild(hg);
+  scrollToBottom();
+}
+function hideHourglass() {
+  document.getElementById('hourglass').classList.remove('visible');
+}
+
+// ============================================================
+// 테이블 렌더링
+// ============================================================
+function renderTable(columns, rows) {
+  const wrap  = document.createElement('div');
+  wrap.className = 'table-wrap';
+  const table = document.createElement('table');
+  table.className = 'preview-table';
+
+  const thead = document.createElement('thead');
+  const hrow  = document.createElement('tr');
+  columns.forEach(col => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    hrow.appendChild(th);
+  });
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    row.forEach(cell => {
+      const td = document.createElement('td');
+      td.textContent = cell;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+// ============================================================
+// 업로드 모달
+// ============================================================
+function openUploadModal() {
+  document.getElementById('modal-overlay').classList.add('visible');
+  document.getElementById('input-db-name').focus();
+}
+function closeUploadModal() {
+  document.getElementById('modal-overlay').classList.remove('visible');
+  selectedFiles = [];
+  renderFileList();
+}
+
+// 드래그 앤 드롭
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles(Array.from(e.dataTransfer.files));
+});
+
+function onFileSelect(e) {
+  addFiles(Array.from(e.target.files));
+  e.target.value = '';
+}
+
+function addFiles(files) {
+  files.forEach(f => {
+    const ext = f.name.toLowerCase();
+    if (!ext.endsWith('.csv') && !ext.endsWith('.zip')) return;
+    if (!selectedFiles.find(x => x.name === f.name && x.size === f.size)) {
+      selectedFiles.push({ name: f.name, size: f.size, file: f });
+    }
+  });
+  renderFileList();
+}
+
+function removeFile(idx) {
+  selectedFiles.splice(idx, 1);
+  renderFileList();
+}
+
+function renderFileList() {
+  const list  = document.getElementById('file-list');
+  const total = document.getElementById('total-size');
+  const btn   = document.getElementById('btn-do-upload');
+  list.innerHTML = '';
+
+  let totalBytes = 0;
+  selectedFiles.forEach((f, i) => {
+    totalBytes += f.size;
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    item.innerHTML = `
+      <span>📄</span>
+      <span class="file-name" title="${f.name}">${f.name}</span>
+      <span class="file-size">${formatSize(f.size)}</span>
+      <span class="file-rm" onclick="removeFile(${i})">×</span>`;
+    list.appendChild(item);
+  });
+
+  const MAX = 100 * 1024 * 1024 * 1024;
+  const over = totalBytes > MAX;
+  total.textContent = selectedFiles.length > 0
+    ? `총 ${formatSize(totalBytes)} / 100GB ${over ? '⚠️ 초과!' : '이하'}`
+    : '';
+  total.className = over ? 'over' : '';
+
+  const dbOk = document.getElementById('input-db-name').value.trim().match(/^[a-zA-Z0-9_]+$/);
+  btn.disabled = selectedFiles.length === 0 || over || !dbOk;
+}
+
+document.getElementById('input-db-name').addEventListener('input', renderFileList);
+
+function formatSize(bytes) {
+  if (bytes < 1024)                return bytes + ' B';
+  if (bytes < 1024*1024)           return (bytes/1024).toFixed(1) + ' KB';
+  if (bytes < 1024*1024*1024)      return (bytes/1024/1024).toFixed(2) + ' MB';
+  return (bytes/1024/1024/1024).toFixed(2) + ' GB';
+}
+
+// ============================================================
+// 파일 업로드 실행
+// ============================================================
+async function doUpload() {
+  const dbName = document.getElementById('input-db-name').value.trim();
+  if (!dbName || !dbName.match(/^[a-zA-Z0-9_]+$/)) {
+    showToast('올바른 데이터베이스 이름을 입력하세요 (영문, 숫자, _)');
+    return;
+  }
+  if (selectedFiles.length === 0) {
+    showToast('파일을 선택하세요.');
+    return;
+  }
+
+  const form = new FormData();
+  form.append('db_name', dbName);
+  selectedFiles.forEach(f => form.append('files', f.file));
+
+  closeUploadModal();
+  document.getElementById('btn-upload').disabled = true;
+
+  const bubble = addMessage('assistant', '').parentNode.querySelector('.bubble');
+  addLogLine(bubble, `📁 "${dbName}" 데이터베이스에 파일 업로드 중...`);
+
+  try {
+    const res  = await fetch('/api/upload', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (!res.ok) {
+      addLogLine(bubble, `❌ ${data.error || '업로드 실패'}`, 'error');
+      showToast(data.error || '업로드 실패', 'error');
+      document.getElementById('btn-upload').disabled = false;
+      return;
+    }
+
+    addLogLine(bubble, `✅ 업로드 완료: ${data.files.join(', ')}`, 'success');
+    updateDbStatus(dbName);
+
+    // 처리 스트림 시작
+    startProcessing(dbName, bubble);
+
+  } catch (e) {
+    addLogLine(bubble, `❌ 네트워크 오류: ${e.message}`, 'error');
+    document.getElementById('btn-upload').disabled = false;
+  }
+}
+
+// ============================================================
+// 처리 스트림 (csv2recap + csv2mysql)
+// ============================================================
+function startProcessing(dbName, bubble) {
+  isProcessing = true;
+  document.getElementById('btn-send').disabled = true;
+
+  const es = new EventSource(`/api/process?db_name=${encodeURIComponent(dbName)}`);
+
+  es.onmessage = (e) => {
+    const event = JSON.parse(e.data);
+
+    switch (event.type) {
+      case 'hourglass_start':
+        showHourglass(event.message);
+        addLogLine(bubble, `⏳ ${event.message}`);
+        break;
+
+      case 'hourglass_end':
+        hideHourglass();
+        addLogLine(bubble, `✅ ${event.message}`, 'success');
+        break;
+
+      case 'mysql_start':
+        addLogLine(bubble, `🗄️ ${event.message}`);
+        break;
+
+      case 'log':
+        addLogLine(bubble, event.message);
+        break;
+
+      case 'table_preview': {
+        addLogLine(bubble, `📊 ${event.filename} 미리보기:`, 'success');
+        const preview = document.createElement('div');
+        preview.className = 'table-preview';
+        const h4 = document.createElement('h4');
+        h4.textContent = `📄 ${event.filename}`;
+        preview.appendChild(h4);
+        preview.appendChild(renderTable(event.columns, event.rows));
+        bubble.appendChild(preview);
+        scrollToBottom();
+        break;
+      }
+
+      case 'done':
+        hideHourglass();
+        addLogLine(bubble, `🎉 ${event.message}`, 'success');
+        isProcessing = false;
+        document.getElementById('btn-send').disabled = false;
+        document.getElementById('btn-upload').disabled = false;
+        es.close();
+        break;
+
+      case 'error':
+        hideHourglass();
+        addLogLine(bubble, `❌ ${event.message}`, 'error');
+        showToast(event.message, 'error');
+        isProcessing = false;
+        document.getElementById('btn-send').disabled = false;
+        document.getElementById('btn-upload').disabled = false;
+        es.close();
+        break;
+    }
+  };
+
+  es.onerror = () => {
+    hideHourglass();
+    if (isProcessing) {
+      addLogLine(bubble, '❌ 연결이 끊어졌습니다.', 'error');
+      isProcessing = false;
+      document.getElementById('btn-send').disabled = false;
+      document.getElementById('btn-upload').disabled = false;
+    }
+    es.close();
+  };
+}
+
+// ============================================================
+// 질문 전송
+// ============================================================
+function sendQuery() {
+  const input = document.getElementById('query-input');
+  const query = input.value.trim();
+  if (!query || isQuerying || isProcessing) return;
+
+  const dbName = getCookie('database_name');
+  if (!dbName) {
+    showToast('데이터베이스가 없습니다. 먼저 파일을 업로드하세요.');
+    return;
+  }
+
+  input.value = '';
+  input.style.height = 'auto';
+  addMessage('user', escapeHtml(query));
+
+  isQuerying = true;
+  document.getElementById('btn-send').disabled = true;
+
+  const bubble = addMessage('assistant', '').parentNode.querySelector('.bubble');
+  addLogLine(bubble, '🔍 관련 테이블 검색 중...');
+
+  fetch('/api/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  }).then(res => {
+    if (!res.ok) {
+      return res.json().then(d => { throw new Error(d.error || '요청 실패'); });
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    function readChunk() {
+      reader.read().then(({ done, value }) => {
+        if (done) {
+          isQuerying = false;
+          document.getElementById('btn-send').disabled = false;
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        parts.forEach(part => {
+          if (part.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(part.slice(6));
+              handleQueryEvent(event, bubble);
+            } catch (_) {}
+          }
+        });
+        readChunk();
+      });
+    }
+    readChunk();
+
+  }).catch(e => {
+    addLogLine(bubble, `❌ ${e.message}`, 'error');
+    isQuerying = false;
+    document.getElementById('btn-send').disabled = false;
+  });
+}
+
+function handleQueryEvent(event, bubble) {
+  switch (event.type) {
+    case 'log':
+      addLogLine(bubble, event.message);
+      break;
+
+    case 'tables_selected': {
+      const names = (event.tables || []).join(', ');
+      addLogLine(bubble, `📋 선택된 테이블: ${names}`, 'success');
+      break;
+    }
+
+    case 'sql_generated': {
+      addLogLine(bubble, '📝 생성된 SQL:', 'success');
+      const sqlDiv = document.createElement('div');
+      sqlDiv.className = 'sql-block';
+      sqlDiv.textContent = event.sql;
+      bubble.appendChild(sqlDiv);
+      if (event.notes) {
+        addLogLine(bubble, `📌 ${event.notes}`);
+      }
+      scrollToBottom();
+      break;
+    }
+
+    case 'result': {
+      addLogLine(bubble, `✅ 결과: ${event.total_rows}행`, 'success');
+      if (event.columns && event.columns.length > 0) {
+        const summary = document.createElement('div');
+        summary.className = 'result-summary';
+        summary.innerHTML = `<strong>${event.total_rows}</strong>행 반환 (최대 200행 표시)`;
+        bubble.appendChild(summary);
+        bubble.appendChild(renderTable(event.columns, event.rows));
+      } else {
+        addLogLine(bubble, '결과 없음');
+      }
+      scrollToBottom();
+      isQuerying = false;
+      document.getElementById('btn-send').disabled = false;
+      break;
+    }
+
+    case 'done':
+      addLogLine(bubble, `🎉 ${event.message}`, 'success');
+      isQuerying = false;
+      document.getElementById('btn-send').disabled = false;
+      break;
+
+    case 'error':
+      addLogLine(bubble, `❌ ${event.message}`, 'error');
+      showToast(event.message, 'error');
+      isQuerying = false;
+      document.getElementById('btn-send').disabled = false;
+      break;
+  }
+}
+
+// ============================================================
+// 데이터베이스 삭제
+// ============================================================
+function confirmDelete() {
+  const dbName = getCookie('database_name');
+  document.getElementById('confirm-msg').innerHTML =
+    `<strong>${dbName}</strong> 데이터베이스를 삭제하시겠습니까?<br>
+     Milvus collection, MySQL database, 업로드 파일이 모두 삭제됩니다.`;
+  document.getElementById('confirm-overlay').classList.add('visible');
+}
+function closeConfirm() {
+  document.getElementById('confirm-overlay').classList.remove('visible');
+}
+
+async function doDelete() {
+  closeConfirm();
+  const bubble = addMessage('assistant', '').parentNode.querySelector('.bubble');
+  addLogLine(bubble, '🗑️ 데이터베이스 삭제 중...');
+
+  try {
+    const res  = await fetch('/api/database', { method: 'DELETE' });
+    const data = await res.json();
+
+    if (data.errors && data.errors.length > 0) {
+      data.errors.forEach(e => addLogLine(bubble, `⚠️ ${e}`, 'error'));
+    }
+    addLogLine(bubble, '✅ 삭제 완료', 'success');
+    updateDbStatus('');
+    showToast('데이터베이스가 삭제되었습니다.', 'success');
+  } catch (e) {
+    addLogLine(bubble, `❌ ${e.message}`, 'error');
+    showToast('삭제 중 오류가 발생했습니다.');
+  }
+}
+
+// ============================================================
+// 토스트 알림
+// ============================================================
+function showToast(msg, type='error') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  setTimeout(() => { t.className = type; }, 3000);
+}
+
+// ============================================================
+// 유틸
+// ============================================================
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\n/g, '<br>');
+}
+
+// textarea 자동 높이
+document.getElementById('query-input').addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+// Enter 키 전송 (Shift+Enter = 줄바꿈)
+document.getElementById('query-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendQuery();
+  }
+});
+
+// ============================================================
+// 초기화
+// ============================================================
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const res  = await fetch('/api/status');
+    const data = await res.json();
+    updateDbStatus(data.database || '');
+  } catch (_) {
+    updateDbStatus('');
+  }
+
+  addMessage('assistant',
+    '안녕하세요! T-bot RAG입니다. 📊<br>' +
+    'CSV 파일을 업로드하면 자연어로 데이터를 조회할 수 있습니다.<br>' +
+    '상단의 <strong>파일 업로드</strong> 버튼을 눌러 시작하세요.'
+  );
+});
+</script>
+</body>
+</html>
